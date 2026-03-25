@@ -52,25 +52,18 @@ body {
   animation: blink 1s step-end infinite;
 }
 
-/* Flash animation for new items — sharp initial burst */
+/* Bloomberg-style rapid blink for new items — hard on/off flashes then fade */
 @keyframes flash-in {
-  0% {
-    background-color: rgba(255, 170, 0, 0.5);
-    border-left: 3px solid #ff6600;
-    color: #ffffff;
-  }
-  30% {
-    background-color: rgba(255, 102, 0, 0.2);
-    border-left: 3px solid #ff6600;
-  }
-  100% {
-    background-color: transparent;
-    border-left: 3px solid transparent;
-    color: inherit;
-  }
+  0%   { background-color: #ff6600; color: #000000; border-left: 3px solid #ffffff; }
+  8%   { background-color: transparent; color: inherit; border-left: 3px solid transparent; }
+  16%  { background-color: #ff6600; color: #000000; border-left: 3px solid #ffffff; }
+  24%  { background-color: transparent; color: inherit; border-left: 3px solid transparent; }
+  32%  { background-color: #ff6600; color: #000000; border-left: 3px solid #ffffff; }
+  40%  { background-color: rgba(255, 102, 0, 0.25); color: inherit; border-left: 3px solid #ff6600; }
+  100% { background-color: transparent; color: inherit; border-left: 3px solid transparent; }
 }
 .flash-new {
-  animation: flash-in 2s ease-out;
+  animation: flash-in 1.8s step-start;
 }
 
 /* Scrollbar styling */
