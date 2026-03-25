@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-mono: var(--font-geist-mono);
+  --color-bb-black: #000000;
+  --color-bb-dark: #1a1a1a;
+  --color-bb-panel: #0d0d0d;
+  --color-bb-border: #333333;
+  --color-bb-orange: #ff6600;
+  --color-bb-amber: #ffaa00;
+  --color-bb-green: #00ff00;
+  --color-bb-red: #ff3333;
+  --color-bb-blue: #3399ff;
+  --color-bb-white: #cccccc;
+  --color-bb-bright: #ffffff;
+  --color-bb-muted: #666666;
+  --color-bb-highlight: #1a2a1a;
+}
+
+* {
+  cursor: default;
+}
+
+body {
+  background: var(--color-bb-black);
+  color: var(--color-bb-white);
+  font-family: var(--font-mono), "Courier New", monospace;
+}
+
+/* Scanline overlay */
+.scanline::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.08) 2px,
+    rgba(0, 0, 0, 0.08) 4px
+  );
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* Blinking cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.cursor-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Flash animation for new items */
+@keyframes flash-in {
+  0% { background-color: rgba(255, 102, 0, 0.3); }
+  100% { background-color: transparent; }
+}
+.flash-new {
+  animation: flash-in 1.5s ease-out;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-bb-black); }
+::-webkit-scrollbar-thumb { background: var(--color-bb-border); }
