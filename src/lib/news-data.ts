@@ -51,5 +51,5 @@ export function generateNewsItem(): NewsItem {
 }
 
 export function generateInitialNews(count: number): NewsItem[] {
-  return Array.from({ length: count }, () => generateNewsItem()).reverse();
+  return Array.from({ length: count }, () => generateNewsItem());
 }

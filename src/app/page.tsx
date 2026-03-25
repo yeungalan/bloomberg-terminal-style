@@ -2,13 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { generateNewsItem, generateInitialNews, type NewsItem } from "@/lib/news-data";
+import { CATEGORY_FILTERS, INITIAL_NEWS_COUNT, NEWS_INTERVAL } from "@/lib/constants";
 import SearchBar from "@/components/SearchBar";
 import NewsFeed from "@/components/NewsFeed";
 import NewsDetail from "@/components/NewsDetail";
 import StatusBar from "@/components/StatusBar";
 
 type Category = NewsItem["category"] | "ALL";
-const CATEGORIES: Category[] = ["ALL", "GOVT", "CORP", "ECON", "MKTG", "CMDTY", "FX", "TECH"];
 
 export default function Terminal() {
   const [news, setNews] = useState<NewsItem[]>([]);
@@ -18,16 +18,15 @@ export default function Terminal() {
   const [category, setCategory] = useState<Category>("ALL");
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Initialize news
   useEffect(() => {
-    setNews(generateInitialNews(30));
+    setNews(generateInitialNews(INITIAL_NEWS_COUNT));
   }, []);
 
-  // Incoming news ticker
+  // Incoming news — prepend so newest is at top
   useEffect(() => {
     const id = setInterval(() => {
-      setNews((prev) => [...prev, generateNewsItem()]);
-    }, 2000 + Math.random() * 3000);
+      setNews((prev) => [generateNewsItem(), ...prev]);
+    }, NEWS_INTERVAL[0] + Math.random() * (NEWS_INTERVAL[1] - NEWS_INTERVAL[0]));
     return () => clearInterval(id);
   }, []);
 
@@ -50,28 +49,14 @@ export default function Terminal() {
     if (filtered[next]) setSelectedId(filtered[next].id);
   }, [filtered, selectedId]);
 
-  // Global keyboard handler
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const inSearch = target === searchRef.current;
 
-      // "/" focuses search from anywhere
-      if (e.key === "/" && !inSearch) {
-        e.preventDefault();
-        searchRef.current?.focus();
-        return;
-      }
+      if (e.key === "/" && !inSearch) { e.preventDefault(); searchRef.current?.focus(); return; }
+      if (e.key === "Tab") { e.preventDefault(); inSearch ? searchRef.current?.blur() : searchRef.current?.focus(); return; }
 
-      // Tab toggles between search and feed
-      if (e.key === "Tab") {
-        e.preventDefault();
-        if (inSearch) searchRef.current?.blur();
-        else searchRef.current?.focus();
-        return;
-      }
-
-      // Escape: close detail → clear selection → clear search
       if (e.key === "Escape") {
         if (detailId) { setDetailId(null); return; }
         if (selectedId) { setSelectedId(null); return; }
@@ -80,25 +65,18 @@ export default function Terminal() {
         return;
       }
 
-      // Arrow navigation (works even when search is focused)
       if (e.key === "ArrowDown") { e.preventDefault(); navigate(1); return; }
       if (e.key === "ArrowUp") { e.preventDefault(); navigate(-1); return; }
-
-      // Home/End
       if (e.key === "Home") { e.preventDefault(); if (filtered[0]) setSelectedId(filtered[0].id); return; }
       if (e.key === "End") { e.preventDefault(); if (filtered.length) setSelectedId(filtered[filtered.length - 1].id); return; }
-
-      // Enter opens detail
       if (e.key === "Enter" && selectedId) { e.preventDefault(); setDetailId(selectedId); return; }
 
-      // F key cycles category filter (only when not in search)
       if (e.key === "f" && !inSearch) {
         e.preventDefault();
         setCategory((prev) => {
-          const idx = CATEGORIES.indexOf(prev);
-          return CATEGORIES[(idx + 1) % CATEGORIES.length];
+          const values = CATEGORY_FILTERS.map((f) => f.value);
+          return values[(values.indexOf(prev) + 1) % values.length];
         });
-        return;
       }
     };
 
@@ -108,34 +86,28 @@ export default function Terminal() {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      {/* Header */}
       <div className="flex items-center justify-between px-2 py-1 bg-bb-orange text-bb-black text-xs font-bold">
         <span>BLOOMBERG NEWS</span>
         <div className="flex gap-3">
-          {CATEGORIES.map((c) => (
+          {CATEGORY_FILTERS.map((f) => (
             <button
-              key={c}
-              onClick={() => setCategory(c)}
+              key={f.value}
+              onClick={() => setCategory(f.value)}
               tabIndex={-1}
-              className={`px-1 ${category === c ? "bg-bb-black text-bb-orange" : "hover:underline"}`}
+              className={`px-1 ${category === f.value ? "bg-bb-black text-bb-orange" : "hover:underline"}`}
             >
-              {c}
+              {f.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Search */}
       <SearchBar ref={searchRef} value={search} onChange={setSearch} resultCount={filtered.length} totalCount={news.length} />
 
-      {/* Main content */}
       <div className="flex flex-1 min-h-0">
-        {/* News list */}
         <div className={`flex flex-col min-h-0 ${detailId ? "w-1/2 border-r border-bb-border" : "w-full"}`}>
           <NewsFeed items={filtered} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setDetailId(id); }} />
         </div>
-
-        {/* Detail panel */}
         {detailId && (
           <div className="w-1/2 bg-bb-panel">
             <NewsDetail item={selectedItem} />
@@ -143,7 +115,6 @@ export default function Terminal() {
         )}
       </div>
 
-      {/* Status bar */}
       <StatusBar />
     </div>
   );
