@@ -14,9 +14,8 @@ function NewsRow({ item, isSelected, isNew, onSelect }: {
     <div
       className={[
         "flex gap-2 px-2 py-0.5 text-xs leading-5 border-b border-bb-border/30 cursor-default",
-        isSelected ? "bg-bb-orange/20 text-bb-bright" : "hover:bg-bb-dark",
+        isSelected ? "bg-bb-orange/20 text-bb-bright" : isNew ? "flash-new" : "hover:bg-bb-dark",
         item.urgency === "FLASH" ? "text-bb-red font-bold" : item.urgency === "URGENT" ? "text-bb-amber" : "",
-        isNew ? "flash-new" : "",
       ].join(" ")}
       onClick={onSelect}
       role="row"
@@ -42,33 +41,31 @@ export default function NewsFeed({ items, selectedId, onSelect }: {
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
-  const prevCountRef = useRef(items.length);
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
+  const prevLenRef = useRef(items.length);
   const selectedIdx = items.findIndex((n) => n.id === selectedId);
 
-  // Track which items are "new" (added since last render)
-  const newIdsRef = useRef<Set<string>>(new Set());
+  // Track new items with state so it triggers re-render
   useEffect(() => {
-    if (items.length > prevCountRef.current) {
-      // New items are at the front (index 0..diff-1)
-      const diff = items.length - prevCountRef.current;
-      const added = new Set(items.slice(0, diff).map((n) => n.id));
-      newIdsRef.current = added;
-      // Clear "new" flag after animation
-      const t = setTimeout(() => { newIdsRef.current = new Set(); }, 2000);
-      return () => clearTimeout(t);
-    }
-    prevCountRef.current = items.length;
-  }, [items]);
+    const prev = prevLenRef.current;
+    prevLenRef.current = items.length;
+    if (items.length <= prev) return;
 
-  // Auto-scroll to top when new items arrive (newest first)
+    const diff = items.length - prev;
+    const added = new Set(items.slice(0, diff).map((n) => n.id));
+    setNewIds(added);
+
+    const t = setTimeout(() => setNewIds(new Set()), 2000);
+    return () => clearTimeout(t);
+  }, [items.length, items]);
+
+  // Auto-scroll to top
   useEffect(() => {
     if (autoScroll && containerRef.current) {
       containerRef.current.scrollTop = 0;
     }
-    prevCountRef.current = items.length;
   }, [items.length, autoScroll]);
 
-  // Scroll selected item into view
   useEffect(() => {
     if (selectedIdx < 0 || !containerRef.current) return;
     const rows = containerRef.current.querySelectorAll("[role=row]");
@@ -92,7 +89,7 @@ export default function NewsFeed({ items, selectedId, onSelect }: {
             key={item.id}
             item={item}
             isSelected={item.id === selectedId}
-            isNew={newIdsRef.current.has(item.id)}
+            isNew={newIds.has(item.id)}
             onSelect={() => onSelect(item.id)}
           />
         ))}
