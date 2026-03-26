@@ -8,4 +8,5 @@ export interface NewsItem {
   body: string;
   region: "US" | "EU" | "APAC";
   link: string;
+  timestamp: string;
 }

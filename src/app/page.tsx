@@ -120,7 +120,7 @@ export default function Terminal() {
       if (e.key === "ArrowUp") { e.preventDefault(); navigate(-1); return; }
       if (e.key === "Home") { e.preventDefault(); if (filtered[0]) setSelectedId(filtered[0].id); return; }
       if (e.key === "End") { e.preventDefault(); if (filtered.length) setSelectedId(filtered[filtered.length - 1].id); return; }
-      if (e.key === "Enter" && selectedId) { e.preventDefault(); setDetailId(selectedId); return; }
+      if (e.key === "Enter" && selectedId) { e.preventDefault(); if (detailId) { setDetailId(null); } else { setDetailId(selectedId); } return; }
 
       if (!inSearch) {
         if (e.key === "o" && selectedId) {

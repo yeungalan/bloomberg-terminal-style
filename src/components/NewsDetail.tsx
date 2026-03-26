@@ -2,6 +2,24 @@
 
 import type { NewsItem } from "@/lib/news-data";
 import { REGION_COLORS } from "@/lib/constants";
+import { useState, useEffect } from "react";
+
+function relativeTime(iso: string) {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function RelativeTime({ iso }: { iso: string }) {
+  const [text, setText] = useState(() => relativeTime(iso));
+  useEffect(() => {
+    const id = setInterval(() => setText(relativeTime(iso)), 15000);
+    return () => clearInterval(id);
+  }, [iso]);
+  return <span className="text-bb-amber">{text}</span>;
+}
 
 export default function NewsDetail({ item }: { item: NewsItem | null }) {
   if (!item) {
@@ -22,6 +40,7 @@ export default function NewsDetail({ item }: { item: NewsItem | null }) {
         )}
         <span className={`font-bold ${REGION_COLORS[item.region] ?? ""}`}>{item.region}</span>
         <span className="text-bb-muted">{item.time}</span>
+        {item.timestamp && <RelativeTime iso={item.timestamp} />}
         <span className="text-bb-muted">{item.source}</span>
         <span className="text-bb-orange">{item.category}</span>
       </div>
@@ -29,11 +48,11 @@ export default function NewsDetail({ item }: { item: NewsItem | null }) {
       <p className="text-bb-white leading-relaxed">{item.body}</p>
       {item.link && (
         <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-bb-blue hover:underline block">
-          → FULL ARTICLE
+          → FULL ARTICLE (O)
         </a>
       )}
       <div className="text-bb-muted pt-2 border-t border-bb-border/30">
-        ID: {item.id} | ESC TO CLOSE
+        ID: {item.id} | ESC/ENTER TO CLOSE | O OPEN LINK
       </div>
     </div>
   );

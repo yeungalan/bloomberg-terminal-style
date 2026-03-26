@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io/fs"
 	"log"
 	"net/http"
@@ -30,6 +31,7 @@ type NewsItem struct {
 	Region   string    `json:"region"`
 	Link     string    `json:"link"`
 	Parsed   time.Time `json:"-"` // for sorting, not sent to client
+	ISOTime  string    `json:"timestamp"`
 }
 
 type Feed struct {
@@ -55,6 +57,25 @@ var feeds = []Feed{
 	{URL: "https://feeds.bbci.co.uk/news/world/asia/rss.xml", Source: "BBC-APAC", Region: "APAC"},
 	{URL: "https://asia.nikkei.com/rss/feed/nar", Source: "NIKKEI", Region: "APAC"},
 	{URL: "https://feeds.reuters.com/reuters/INbusinessNews", Source: "RTRS-IN", Region: "APAC"},
+	{URL: "https://rthk.hk/rthk/news/rss/e_expressnews_elocal.xml", Source: "RTHK", Region: "APAC"},
+	// Global
+	{URL: "https://news.google.com/rss", Source: "GOOG", Region: "US"},
+	{URL: "https://rsshub.app/apnews/topics/apf-topnews", Source: "AP", Region: "US"},
+	// US cont.
+	{URL: "https://feeds.nbcnews.com/nbcnews/public/news", Source: "NBC", Region: "US"},
+	{URL: "https://abcnews.go.com/abcnews/topstories", Source: "ABC", Region: "US"},
+	{URL: "https://news.yahoo.co.jp/rss/topics/top-picks.xml", Source: "YAHOO-JP", Region: "APAC"},
+	// EU cont.
+	{URL: "https://www.theguardian.com/world/rss", Source: "GUARDIAN", Region: "EU"},
+	{URL: "https://www.aljazeera.com/xml/rss/all.xml", Source: "ALJAZEERA", Region: "EU"},
+	{URL: "https://www.rfi.fr/en/rss.xml", Source: "RFI", Region: "EU"},
+	{URL: "https://feeds.skynews.com/feeds/rss/world.xml", Source: "SKY", Region: "EU"},
+	// APAC cont.
+	{URL: "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml", Source: "CNA", Region: "APAC"},
+	{URL: "https://www.cbc.ca/webfeed/rss/rss-topstories", Source: "CBC", Region: "US"},
+	{URL: "https://globalnews.ca/feed/", Source: "GLOBAL", Region: "US"},
+	// MENA
+	{URL: "https://www.mena.org.eg/en/rss", Source: "MENA", Region: "EU"},
 }
 
 func sortByTime(items []NewsItem) {
@@ -269,6 +290,7 @@ func parseFeed(f Feed) []rawItem {
 			item: NewsItem{
 				ID:       nextID(),
 				Time:     t.UTC().Format("15:04:05"),
+				ISOTime:  t.UTC().Format(time.RFC3339),
 				Headline: entry.Title,
 				Source:   f.Source,
 				Category: categoryFromTags(entry.Title, tags),
@@ -397,7 +419,7 @@ func stripTags(s string) string {
 			b.WriteRune(r)
 		}
 	}
-	return strings.TrimSpace(b.String())
+	return strings.TrimSpace(html.UnescapeString(b.String()))
 }
 
 func main() {
