@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -19,15 +20,16 @@ import (
 var staticFiles embed.FS
 
 type NewsItem struct {
-	ID       string `json:"id"`
-	Time     string `json:"time"`
-	Headline string `json:"headline"`
-	Source   string `json:"source"`
-	Category string `json:"category"`
-	Urgency  string `json:"urgency"`
-	Body     string `json:"body"`
-	Region   string `json:"region"`
-	Link     string `json:"link"`
+	ID       string    `json:"id"`
+	Time     string    `json:"time"`
+	Headline string    `json:"headline"`
+	Source   string    `json:"source"`
+	Category string    `json:"category"`
+	Urgency  string    `json:"urgency"`
+	Body     string    `json:"body"`
+	Region   string    `json:"region"`
+	Link     string    `json:"link"`
+	Parsed   time.Time `json:"-"` // for sorting, not sent to client
 }
 
 type Feed struct {
@@ -55,31 +57,46 @@ var feeds = []Feed{
 	{URL: "https://feeds.reuters.com/reuters/INbusinessNews", Source: "RTRS-IN", Region: "APAC"},
 }
 
-// --- Store: global deduped ordered list of all news items ---
+func sortByTime(items []NewsItem) {
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Parsed.After(items[j].Parsed)
+	})
+}
+
+// --- Store ---
 
 type Store struct {
-	mu    sync.RWMutex
-	items []NewsItem       // ordered, newest first
-	seen  map[string]bool  // GUID -> already stored
+	mu   sync.RWMutex
+	items []NewsItem
+	seen  map[string]bool
 }
 
 func newStore() *Store {
 	return &Store{seen: make(map[string]bool)}
 }
 
-// add deduplicates by GUID and prepends new items. Returns only the newly added items.
-func (s *Store) add(guid string, item NewsItem) bool {
+func (s *Store) addBatch(items []NewsItem, guids []string) []NewsItem {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.seen[guid] {
-		return false
+
+	var added []NewsItem
+	for i, item := range items {
+		if s.seen[guids[i]] {
+			continue
+		}
+		s.seen[guids[i]] = true
+		added = append(added, item)
 	}
-	s.seen[guid] = true
-	s.items = append([]NewsItem{item}, s.items...)
+	if len(added) == 0 {
+		return nil
+	}
+
+	s.items = append(added, s.items...)
+	sortByTime(s.items)
 	if len(s.items) > 500 {
 		s.items = s.items[:500]
 	}
-	return true
+	return added
 }
 
 func (s *Store) snapshot() []NewsItem {
@@ -90,15 +107,13 @@ func (s *Store) snapshot() []NewsItem {
 	return cp
 }
 
-// --- Client: per-connection state tracking what's been sent ---
+// --- Client / Hub ---
 
 type Client struct {
 	conn *websocket.Conn
-	sent map[string]bool // news IDs already pushed to this client
+	sent map[string]bool
 	ch   chan []byte
 }
-
-// --- Hub: manages clients, pushes per-client diffs ---
 
 type Hub struct {
 	mu      sync.Mutex
@@ -125,8 +140,9 @@ func (h *Hub) unregister(c *Client) {
 	h.mu.Unlock()
 }
 
-// pushNew sends each client only the items it hasn't received yet.
 func (h *Hub) pushNew(newItems []NewsItem) {
+	sortByTime(newItems)
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -147,7 +163,7 @@ func (h *Hub) pushNew(newItems []NewsItem) {
 		}
 		select {
 		case c.ch <- data:
-		default: // drop if slow
+		default:
 		}
 	}
 }
@@ -165,7 +181,6 @@ func wsHandler(hub *Hub) http.HandlerFunc {
 
 		c := &Client{conn: conn, sent: make(map[string]bool), ch: make(chan []byte, 32)}
 
-		// Send full backlog on connect, mark all as sent for this client.
 		backlog := hub.store.snapshot()
 		if len(backlog) > 0 {
 			for _, item := range backlog {
@@ -179,7 +194,6 @@ func wsHandler(hub *Hub) http.HandlerFunc {
 		hub.register(c)
 		defer hub.unregister(c)
 
-		// Write pump
 		go func() {
 			for data := range c.ch {
 				if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
@@ -189,7 +203,6 @@ func wsHandler(hub *Hub) http.HandlerFunc {
 			}
 		}()
 
-		// Read pump — keep alive, detect close
 		for {
 			if _, _, err := conn.ReadMessage(); err != nil {
 				return
@@ -210,7 +223,12 @@ func nextID() string {
 	return fmt.Sprintf("N%d", idCounter)
 }
 
-func fetchFeed(f Feed, store *Store) []NewsItem {
+type rawItem struct {
+	item NewsItem
+	guid string
+}
+
+func parseFeed(f Feed) []rawItem {
 	fp := gofeed.NewParser()
 	fp.UserAgent = "bloomberg-terminal/1.0"
 
@@ -220,7 +238,7 @@ func fetchFeed(f Feed, store *Store) []NewsItem {
 		return nil
 	}
 
-	var newItems []NewsItem
+	var out []rawItem
 	for _, entry := range feed.Items {
 		guid := entry.GUID
 		if guid == "" {
@@ -246,23 +264,82 @@ func fetchFeed(f Feed, store *Store) []NewsItem {
 			t = *entry.PublishedParsed
 		}
 
-		item := NewsItem{
-			ID:       nextID(),
-			Time:     t.UTC().Format("15:04:05"),
-			Headline: entry.Title,
-			Source:   f.Source,
-			Category: categoryFromTags(entry.Title, tags),
-			Urgency:  urgencyFromTitle(entry.Title),
-			Body:     body,
-			Region:   f.Region,
-			Link:     entry.Link,
-		}
+		out = append(out, rawItem{
+			guid: guid,
+			item: NewsItem{
+				ID:       nextID(),
+				Time:     t.UTC().Format("15:04:05"),
+				Headline: entry.Title,
+				Source:   f.Source,
+				Category: categoryFromTags(entry.Title, tags),
+				Urgency:  urgencyFromTitle(entry.Title),
+				Body:     body,
+				Region:   f.Region,
+				Link:     entry.Link,
+				Parsed:   t,
+			},
+		})
+	}
+	return out
+}
 
-		if store.add(guid, item) {
-			newItems = append(newItems, item)
+func ingestRaw(raws []rawItem, store *Store) []NewsItem {
+	items := make([]NewsItem, len(raws))
+	guids := make([]string, len(raws))
+	for i, r := range raws {
+		items[i] = r.item
+		guids[i] = r.guid
+	}
+	return store.addBatch(items, guids)
+}
+
+// fetchAllConcurrent fetches all feeds in parallel, returns sorted new items.
+func fetchAllConcurrent(store *Store) []NewsItem {
+	var mu sync.Mutex
+	var allRaw []rawItem
+	var wg sync.WaitGroup
+
+	for _, f := range feeds {
+		wg.Add(1)
+		go func(f Feed) {
+			defer wg.Done()
+			raws := parseFeed(f)
+			if len(raws) > 0 {
+				mu.Lock()
+				allRaw = append(allRaw, raws...)
+				mu.Unlock()
+				log.Printf("Fetched %d items from [%s] %s", len(raws), f.Region, f.Source)
+			}
+		}(f)
+	}
+	wg.Wait()
+
+	return ingestRaw(allRaw, store)
+}
+
+func scheduler(hub *Hub, store *Store) {
+	// Initial: fetch all feeds concurrently
+	log.Printf("Initial fetch: loading all %d feeds concurrently...", len(feeds))
+	newItems := fetchAllConcurrent(store)
+	log.Printf("Initial fetch complete: %d items loaded", len(newItems))
+	// No push needed — backlog is sent on client connect
+
+	// Rolling: one feed at a time
+	n := len(feeds)
+	interval := (5 * time.Minute) / time.Duration(n)
+	log.Printf("Rolling schedule: one feed every %v", interval)
+
+	for i := 0; ; i++ {
+		time.Sleep(interval)
+		f := feeds[i%n]
+		log.Printf("Fetching [%s] %s", f.Region, f.Source)
+
+		raws := parseFeed(f)
+		if added := ingestRaw(raws, store); len(added) > 0 {
+			hub.pushNew(added)
+			log.Printf("Pushed %d new items from %s", len(added), f.Source)
 		}
 	}
-	return newItems
 }
 
 func categoryFromTags(title string, tags []string) string {
@@ -321,25 +398,6 @@ func stripTags(s string) string {
 		}
 	}
 	return strings.TrimSpace(b.String())
-}
-
-func scheduler(hub *Hub, store *Store) {
-	n := len(feeds)
-	interval := (5 * time.Minute) / time.Duration(n)
-	log.Printf("Scheduling %d feeds, one every %v", n, interval)
-
-	for i := 0; ; i++ {
-		f := feeds[i%n]
-		log.Printf("Fetching [%s] %s", f.Region, f.Source)
-
-		newItems := fetchFeed(f, store)
-		if len(newItems) > 0 {
-			hub.pushNew(newItems)
-			log.Printf("Pushed %d new items from %s", len(newItems), f.Source)
-		}
-
-		time.Sleep(interval)
-	}
 }
 
 func main() {
