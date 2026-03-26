@@ -1,6 +1,7 @@
 "use client";
 
 import type { NewsItem } from "@/lib/news-data";
+import { REGION_COLORS } from "@/lib/constants";
 
 export default function NewsDetail({ item }: { item: NewsItem | null }) {
   if (!item) {
@@ -19,14 +20,20 @@ export default function NewsDetail({ item }: { item: NewsItem | null }) {
             {item.urgency}
           </span>
         )}
+        <span className={`font-bold ${REGION_COLORS[item.region] ?? ""}`}>{item.region}</span>
         <span className="text-bb-muted">{item.time}</span>
         <span className="text-bb-muted">{item.source}</span>
         <span className="text-bb-orange">{item.category}</span>
       </div>
       <h2 className="text-bb-bright font-bold text-sm leading-tight">{item.headline}</h2>
       <p className="text-bb-white leading-relaxed">{item.body}</p>
+      {item.link && (
+        <a href={item.link} target="_blank" rel="noopener noreferrer" className="text-bb-blue hover:underline block">
+          → FULL ARTICLE
+        </a>
+      )}
       <div className="text-bb-muted pt-2 border-t border-bb-border/30">
-        ID: {item.id} | ESC TO CLOSE | TAB TO RETURN TO SEARCH
+        ID: {item.id} | ESC TO CLOSE
       </div>
     </div>
   );

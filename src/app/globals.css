@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-mono: var(--font-geist-mono);
+  --font-mono: "Geist Mono", "Courier New", monospace;
   --color-bb-black: #000000;
   --color-bb-dark: #1a1a1a;
   --color-bb-panel: #0d0d0d;

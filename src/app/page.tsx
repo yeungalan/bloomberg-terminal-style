@@ -1,44 +1,95 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { generateNewsItem, generateInitialNews, type NewsItem } from "@/lib/news-data";
-import { CATEGORY_FILTERS, INITIAL_NEWS_COUNT, NEWS_INTERVAL } from "@/lib/constants";
+import type { NewsItem } from "@/lib/news-data";
+import { CATEGORY_FILTERS, REGION_FILTERS } from "@/lib/constants";
 import SearchBar from "@/components/SearchBar";
 import NewsFeed from "@/components/NewsFeed";
 import NewsDetail from "@/components/NewsDetail";
 import StatusBar from "@/components/StatusBar";
 
 type Category = NewsItem["category"] | "ALL";
+type Region = NewsItem["region"] | "ALL";
+
+function useWebSocket() {
+  const [news, setNews] = useState<NewsItem[]>([]);
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    let ws: WebSocket;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(`${proto}//${location.host}/ws`);
+
+      ws.onopen = () => setConnected(true);
+      ws.onclose = () => {
+        setConnected(false);
+        reconnectTimer = setTimeout(connect, 2000);
+      };
+      ws.onmessage = (e) => {
+        const items: NewsItem[] = JSON.parse(e.data);
+        setNews((prev) => [...items, ...prev].slice(0, 500));
+      };
+    }
+
+    connect();
+    return () => {
+      clearTimeout(reconnectTimer);
+      ws?.close();
+    };
+  }, []);
+
+  return { news, connected };
+}
+
+function useNewIds(news: NewsItem[]) {
+  const [newIds, setNewIds] = useState<Set<string>>(new Set());
+  const initializedRef = useRef(false);
+  const prevIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const currentIds = new Set(news.map((n) => n.id));
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      prevIdsRef.current = currentIds;
+      return;
+    }
+    const added = new Set<string>();
+    for (const id of currentIds) {
+      if (!prevIdsRef.current.has(id)) added.add(id);
+    }
+    prevIdsRef.current = currentIds;
+    if (added.size === 0) return;
+    setNewIds(added);
+    const t = setTimeout(() => setNewIds(new Set()), 2000);
+    return () => clearTimeout(t);
+  }, [news]);
+
+  return newIds;
+}
 
 export default function Terminal() {
-  const [news, setNews] = useState<NewsItem[]>([]);
+  const { news, connected } = useWebSocket();
+  const newIds = useNewIds(news);
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [category, setCategory] = useState<Category>("ALL");
+  const [region, setRegion] = useState<Region>("ALL");
   const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setNews(generateInitialNews(INITIAL_NEWS_COUNT));
-  }, []);
-
-  // Incoming news — prepend so newest is at top
-  useEffect(() => {
-    const id = setInterval(() => {
-      setNews((prev) => [generateNewsItem(), ...prev]);
-    }, NEWS_INTERVAL[0] + Math.random() * (NEWS_INTERVAL[1] - NEWS_INTERVAL[0]));
-    return () => clearInterval(id);
-  }, []);
 
   const filtered = useMemo(() => {
     let items = news;
     if (category !== "ALL") items = items.filter((n) => n.category === category);
+    if (region !== "ALL") items = items.filter((n) => n.region === region);
     if (search) {
       const q = search.toUpperCase();
       items = items.filter((n) => n.headline.toUpperCase().includes(q) || n.source.toUpperCase().includes(q));
     }
     return items;
-  }, [news, search, category]);
+  }, [news, search, category, region]);
 
   const selectedItem = useMemo(() => news.find((n) => n.id === detailId) ?? null, [news, detailId]);
 
@@ -71,31 +122,49 @@ export default function Terminal() {
       if (e.key === "End") { e.preventDefault(); if (filtered.length) setSelectedId(filtered[filtered.length - 1].id); return; }
       if (e.key === "Enter" && selectedId) { e.preventDefault(); setDetailId(selectedId); return; }
 
-      if (e.key === "f" && !inSearch) {
-        e.preventDefault();
-        setCategory((prev) => {
-          const values = CATEGORY_FILTERS.map((f) => f.value);
-          return values[(values.indexOf(prev) + 1) % values.length];
-        });
+      if (!inSearch) {
+        if (e.key === "o" && selectedId) {
+          e.preventDefault();
+          const item = news.find((n) => n.id === selectedId);
+          if (item?.link) window.open(item.link, "_blank", "noopener");
+          return;
+        }
+        if (e.key === "f") {
+          e.preventDefault();
+          setCategory((prev) => {
+            const values = CATEGORY_FILTERS.map((f) => f.value);
+            return values[(values.indexOf(prev) + 1) % values.length];
+          });
+        }
+        if (e.key === "r") {
+          e.preventDefault();
+          setRegion((prev) => {
+            const values = REGION_FILTERS.map((f) => f.value);
+            return values[(values.indexOf(prev) + 1) % values.length];
+          });
+        }
       }
     };
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [navigate, selectedId, detailId, search, filtered]);
+  }, [navigate, selectedId, detailId, search, filtered, news]);
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
       <div className="flex items-center justify-between px-2 py-1 bg-bb-orange text-bb-black text-xs font-bold">
         <span>BLOOMBERG NEWS</span>
         <div className="flex gap-3">
+          {REGION_FILTERS.map((f) => (
+            <button key={f.value} onClick={() => setRegion(f.value)} tabIndex={-1}
+              className={`px-1 ${region === f.value ? "bg-bb-black text-bb-orange" : "hover:underline"}`}>
+              {f.label}
+            </button>
+          ))}
+          <span className="text-bb-black/40">|</span>
           {CATEGORY_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setCategory(f.value)}
-              tabIndex={-1}
-              className={`px-1 ${category === f.value ? "bg-bb-black text-bb-orange" : "hover:underline"}`}
-            >
+            <button key={f.value} onClick={() => setCategory(f.value)} tabIndex={-1}
+              className={`px-1 ${category === f.value ? "bg-bb-black text-bb-orange" : "hover:underline"}`}>
               {f.label}
             </button>
           ))}
@@ -106,7 +175,7 @@ export default function Terminal() {
 
       <div className="flex flex-1 min-h-0">
         <div className={`flex flex-col min-h-0 ${detailId ? "w-1/2 border-r border-bb-border" : "w-full"}`}>
-          <NewsFeed items={filtered} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setDetailId(id); }} />
+          <NewsFeed items={filtered} selectedId={selectedId} newIds={newIds} onSelect={(id) => { setSelectedId(id); setDetailId(id); }} />
         </div>
         {detailId && (
           <div className="w-1/2 bg-bb-panel">
@@ -115,7 +184,7 @@ export default function Terminal() {
         )}
       </div>
 
-      <StatusBar />
+      <StatusBar connected={connected} />
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import type { NewsItem } from "@/lib/news-data";
 
-/** Category filter tabs — add/remove/reorder entries here to customize the filter bar. */
 export const CATEGORY_FILTERS: { label: string; value: NewsItem["category"] | "ALL" }[] = [
   { label: "ALL", value: "ALL" },
   { label: "GOVT", value: "GOVT" },
@@ -12,7 +11,13 @@ export const CATEGORY_FILTERS: { label: string; value: NewsItem["category"] | "A
   { label: "TECH", value: "TECH" },
 ];
 
-/** Color mapping per category — used in the news feed rows. */
+export const REGION_FILTERS: { label: string; value: NewsItem["region"] | "ALL" }[] = [
+  { label: "ALL", value: "ALL" },
+  { label: "US", value: "US" },
+  { label: "EU", value: "EU" },
+  { label: "APAC", value: "APAC" },
+];
+
 export const CATEGORY_COLORS: Record<string, string> = {
   GOVT: "text-bb-blue",
   CORP: "text-bb-green",
@@ -23,8 +28,8 @@ export const CATEGORY_COLORS: Record<string, string> = {
   TECH: "text-[#00cccc]",
 };
 
-/** How many news items to generate on initial load. */
-export const INITIAL_NEWS_COUNT = 30;
-
-/** Interval range (ms) between incoming news items [min, max]. */
-export const NEWS_INTERVAL: [number, number] = [2000, 5000];
+export const REGION_COLORS: Record<string, string> = {
+  US: "text-bb-blue",
+  EU: "text-bb-green",
+  APAC: "text-bb-amber",
+};
